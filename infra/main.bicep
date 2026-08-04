@@ -137,6 +137,33 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
+resource eventGridTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' = {
+  name: '${baseName}-eg-topic'
+  location: location
+  properties: {
+    source: storage.id
+    topicType: 'Microsoft.Storage.StorageAccounts'
+  }
+}
+
+resource eventGridSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2022-06-15' = {
+  parent: eventGridTopic
+  name: '${baseName}-blob-sub'
+  properties: {
+    destination: {
+      endpointType: 'AzureFunction'
+      properties: {
+        resourceId: '${functionApp.id}/functions/BlobTriggerIngest'
+        maxEventsPerBatch: 1
+      }
+    }
+    filter: {
+      includedEventTypes: ['Microsoft.Storage.BlobCreated']
+      subjectBeginsWith: '/blobServices/default/containers/band-data/'
+    }
+  }
+}
+
 // --- RBAC ---
 var storageBlobOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
 resource storageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

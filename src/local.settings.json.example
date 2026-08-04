@@ -10,5 +10,7 @@
     "EMBEDDING_DIMENSIONS": "1536",
     "AZURE_SEARCH_ENDPOINT": "<your-azure-ai-search-endpoint>",
     "AZURE_STORAGE_ACCOUNT_NAME": "<your-storage-account-name>"
+    "AISearch__endpoint": "<your-azure-ai-search-endpoint>",
+    "AISearch__credential": "managedidentity"
   }
 }

@@ -10,32 +10,31 @@ Usage:
     pip install requests beautifulsoup4 lxml azure-storage-blob azure-identity
 
     # Ingest by Sputnik artist ID
-    python ingest.py --artist-id 6723 --artist-name "Tool"
-    python ingest.py --artist-id 1561 --artist-name "Opeth"
-    python ingest.py --artist-id 2455 --artist-name "Porcupine Tree"
+    python ingest.py --artist-id 83 --artist-name "Tool"
+    python ingest.py --artist-id 932 --artist-name "Opeth"
+    python ingest.py --artist-id 328  --artist-name "Porcupine Tree"
 
     # Ingest multiple artists
-    python ingest.py --artist-id 6723 --artist-name "Tool"
-    python ingest.py --artist-id 1561 --artist-name "Opeth"
+    python ingest.py --artist-id 83 --artist-name "Tool"
+    python ingest.py --artist-id 932 --artist-name "Opeth"
 
 Finding artist IDs:
     Browse to https://www.sputnikmusic.com/bands/a/{id} and increment the ID
     until you find the band you want. The ID is in the URL.
 
     Some well-known IDs:
-    Tool           = 6723
-    Opeth          = 1561
-    Porcupine Tree = 2455
-    Radiohead      = 1918
-    Mastodon       = 9186
-    Godspeed       = 4979
-    Sigur Rós      = 5526
+    Tool           = 83
+    Opeth          = 932
+    Porcupine Tree = 328
+    Radiohead      = 86
+    Mastodon       = 598
 """
 import argparse
 import json
 import os
 import sys
 import time
+sys.stdout.reconfigure(encoding='utf-8')
 
 import bs4
 import requests
@@ -56,7 +55,7 @@ def get_artist(artist_id: str) -> dict | None:
     print(f"Fetching: {url}")
 
     try:
-        req = requests.get(url, headers=HEADERS, timeout=15)
+        req = requests.get(url, headers=HEADERS, timeout=30)
         req.raise_for_status()
     except requests.RequestException as e:
         print(f"Error fetching artist {artist_id}: {e}")

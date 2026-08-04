@@ -74,17 +74,11 @@ public class MusicChatAgent(
         // Step 1: Retrieve relevant passages from Azure AI Search.
         // Uses keyword search — for vector/hybrid search, generate an embedding
         // for the query first and use SearchOptions with VectorQueries.
-        var searchOptions = new SearchOptions
-        {
-            Size = MaxResults,
-            Select = { "artist_name", "album_title", "album_year", "album_rating", "album_votes", "content" },
-            QueryType = SearchQueryType.Semantic,
-            SemanticSearch = new SemanticSearchOptions
-            {
-                SemanticConfigurationName = "music-semantic-config",
-                QueryCaption = new QueryCaption(QueryCaptionType.Extractive),
-            }
-        };
+       var searchOptions = new SearchOptions
+{
+    Size = MaxResults,
+    Select = { "artist_name", "album_title", "album_year", "album_rating", "album_votes", "content" },
+};
 
         var searchResults = await searchClient.SearchAsync<MusicDocument>(
             request.Message, searchOptions, cancellationToken);
@@ -135,7 +129,6 @@ public class MusicChatAgent(
         var sessionId = request.SessionId ?? Guid.NewGuid().ToString();
 
         var response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json");
         await response.WriteAsJsonAsync(new ChatResponse(answer, sources, sessionId));
 
         return response;
@@ -163,10 +156,10 @@ public class MusicChatAgent(
         var chat = client.GetChatClient(deployment);
 
         var messages = new List<OpenAI.Chat.ChatMessage>
-        {
-            new OpenAI.Chat.SystemChatMessage($"{systemPrompt}\n\n{context}"),
-            new OpenAI.Chat.UserChatMessage(userMessage)
-        };
+{
+    OpenAI.Chat.ChatMessage.CreateSystemMessage($"{systemPrompt}\n\n{context}"),
+    OpenAI.Chat.ChatMessage.CreateUserMessage(userMessage)
+};
 
         var result = await chat.CompleteChatAsync(messages, cancellationToken: cancellationToken);
         return result.Value.Content[0].Text;
