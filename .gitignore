@@ -1,0 +1,8 @@
+bin/
+obj/
+.azure/
+**/local.settings.json
+**/.env
+.vscode/
+__pycache__/
+*.pyc

@@ -1,0 +1,10 @@
+name: music-rag-agent
+services:
+  api:
+    project: ./src
+    language: dotnet
+    host: function
+
+infra:
+  provider: bicep
+  path: infra

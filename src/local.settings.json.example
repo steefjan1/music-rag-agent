@@ -1,0 +1,14 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "STORAGE_CONNECTION": "UseDevelopmentStorage=true",
+    "AZURE_OPENAI_ENDPOINT": "<your-azure-openai-endpoint>",
+    "OPENAI_EMBEDDINGS_DEPLOYMENT": "text-embedding-ada-002",
+    "OPENAI_CHAT_DEPLOYMENT": "gpt-4o",
+    "EMBEDDING_DIMENSIONS": "1536",
+    "AZURE_SEARCH_ENDPOINT": "<your-azure-ai-search-endpoint>",
+    "AZURE_STORAGE_ACCOUNT_NAME": "<your-storage-account-name>"
+  }
+}
