@@ -99,8 +99,8 @@ curl -X POST "https://<func-name>.azurewebsites.net/api/chat?code=<key>" \
 | Opeth | 932 |
 | Porcupine Tree | 328 |
 | Radiohead | 86 |
-| Mastodon | 9186 |
-| Sigur Rós | 5526 |
+| Mastodon | 598 |
+| Metallica | 1811 |
 
 Find others by browsing `https://www.sputnikmusic.com/bands/a/{id}`.
 
