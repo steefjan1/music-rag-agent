@@ -32,7 +32,7 @@ public class MusicChatAgent(
     SearchClient searchClient,
     ILogger<MusicChatAgent> logger)
 {
-    private const int MaxResults = 5;
+    private const int MaxResults = 20;
     private const string SystemPrompt = """
         You are a music expert assistant specialising in album reviews and discographies.
         Answer questions about bands, albums, and ratings using ONLY the context provided below.
