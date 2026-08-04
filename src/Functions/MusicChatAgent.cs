@@ -1,3 +1,4 @@
+using Azure.AI.OpenAI;
 using Azure.Search.Documents;
 using Azure.Search.Documents.Models;
 using Microsoft.Azure.Functions.Worker;
@@ -11,28 +12,34 @@ using System.Text.Json;
 namespace MusicRagAgent.Functions;
 
 /// <summary>
-/// RAG chat agent: HTTP trigger → Azure AI Search retrieval → Azure OpenAI.
+/// RAG chat agent: HTTP trigger → hybrid search (keyword + vector) → Azure OpenAI.
 ///
 /// Flow:
 ///   1. Accept a user message via HTTP POST /api/chat.
-///   2. Generate a query embedding and perform hybrid search
-///      (keyword + vector) against the music-index.
-///   3. Collect the top passages and format them as context.
-///   4. Call Azure OpenAI with the augmented prompt via the
-///      chat completion binding (handled in ChatCompletion function).
-///   5. Return the grounded answer and source references.
-///
-/// The retrieval and LLM call are split across two functions so the
-/// chat completion binding can be used declaratively. The retrieval
-/// step runs first, writes context to a blob, and then the completion
-/// function picks it up — or for simplicity in this sample, the
-/// context is passed inline via a custom prompt.
+///   2. Generate a query embedding using Azure OpenAI.
+///   3. Perform hybrid search (keyword + vector) against the music-index.
+///      Hybrid search surfaces semantically relevant documents regardless
+///      of term frequency — critical for artist-specific queries where
+///      keyword search alone returns documents from other artists.
+///   4. Collect top passages, build augmented prompt, call Azure OpenAI.
+///   5. Return grounded answer and source references.
 /// </summary>
 public class MusicChatAgent(
     SearchClient searchClient,
     ILogger<MusicChatAgent> logger)
 {
     private const int MaxResults = 20;
+
+    private static readonly string OpenAiEndpoint =
+        Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
+        ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is required.");
+
+    private static readonly string EmbeddingsDeployment =
+        Environment.GetEnvironmentVariable("OPENAI_EMBEDDINGS_DEPLOYMENT") ?? "text-embedding-ada-002";
+
+    private static readonly string ChatDeployment =
+        Environment.GetEnvironmentVariable("OPENAI_CHAT_DEPLOYMENT") ?? "gpt-4o";
+
     private const string SystemPrompt = """
         You are a music expert assistant specialising in album reviews and discographies.
         Answer questions about bands, albums, and ratings using ONLY the context provided below.
@@ -71,22 +78,41 @@ public class MusicChatAgent(
 
         logger.LogInformation("Chat request: {Message}", request.Message);
 
-        // Step 1: Retrieve relevant passages from Azure AI Search.
-        // Uses keyword search — for vector/hybrid search, generate an embedding
-        // for the query first and use SearchOptions with VectorQueries.
-       var searchOptions = new SearchOptions
-{
-    Size = MaxResults,
-    Select = { "artist_name", "album_title", "album_year", "album_rating", "album_votes", "content" },
-};
+        var openAiClient = new AzureOpenAIClient(
+            new Uri(OpenAiEndpoint),
+            new Azure.Identity.DefaultAzureCredential());
+
+        // Step 1: Generate query embedding for vector search component.
+        var embeddingsClient = openAiClient.GetEmbeddingClient(EmbeddingsDeployment);
+        var queryEmbedding = await embeddingsClient.GenerateEmbeddingAsync(
+            request.Message, cancellationToken: cancellationToken);
+        var queryVector = queryEmbedding.Value.ToFloats();
+
+        // Step 2: Hybrid search — keyword + vector.
+        // VectorQueries searches the content_vector field for semantic similarity.
+        // The keyword component (request.Message) handles exact term matching.
+        // Together they surface relevant documents even when the query terms
+        // don't appear verbatim in the indexed content.
+        var vectorQuery = new VectorizedQuery(queryVector)
+        {
+            KNearestNeighborsCount = MaxResults,
+            Fields = { "content_vector" }
+        };
+
+        var searchOptions = new SearchOptions
+        {
+            Size = MaxResults,
+            Select = { "artist_name", "album_title", "album_year", "album_rating", "album_votes", "content" },
+            VectorSearch = new VectorSearchOptions { Queries = { vectorQuery } }
+        };
 
         var searchResults = await searchClient.SearchAsync<MusicDocument>(
             request.Message, searchOptions, cancellationToken);
 
         var passages = new List<(MusicDocument Doc, double? Score)>();
-        await foreach (var result in searchResults.Value.GetResultsAsync())
+        await foreach (var searchResult in searchResults.Value.GetResultsAsync())
         {
-            passages.Add((result.Document, result.Score));
+            passages.Add((searchResult.Document, searchResult.Score));
         }
 
         logger.LogInformation("Retrieved {Count} passages for query.", passages.Count);
@@ -101,7 +127,7 @@ public class MusicChatAgent(
             return notFound;
         }
 
-        // Step 2: Build the augmented prompt with retrieved context.
+        // Step 3: Build augmented prompt with retrieved context.
         var contextBuilder = new StringBuilder();
         contextBuilder.AppendLine("## Retrieved context");
         contextBuilder.AppendLine();
@@ -116,52 +142,20 @@ public class MusicChatAgent(
             sources.Add($"{doc.ArtistName} — {doc.AlbumTitle} ({doc.AlbumRating}/5.0)");
         }
 
-        // Step 3: Call Azure OpenAI with the augmented prompt.
-        // In production, use the chat completion binding for managed identity
-        // and session state. This sample uses the Azure OpenAI SDK directly
-        // for clarity — see host.json and BlobTriggerIngest for the binding approach.
-        var answer = await CallOpenAiAsync(
-            SystemPrompt,
-            contextBuilder.ToString(),
-            request.Message,
-            cancellationToken);
+        // Step 4: Call Azure OpenAI with augmented prompt.
+        var chatClient = openAiClient.GetChatClient(ChatDeployment);
+        var messages = new List<OpenAI.Chat.ChatMessage>
+        {
+            OpenAI.Chat.ChatMessage.CreateSystemMessage($"{SystemPrompt}\n\n{contextBuilder}"),
+            OpenAI.Chat.ChatMessage.CreateUserMessage(request.Message)
+        };
+
+        var result = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
+        var answer = result.Value.Content[0].Text;
 
         var sessionId = request.SessionId ?? Guid.NewGuid().ToString();
-
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new ChatResponse(answer, sources, sessionId));
-
         return response;
-    }
-
-    private async Task<string> CallOpenAiAsync(
-        string systemPrompt,
-        string context,
-        string userMessage,
-        CancellationToken cancellationToken)
-    {
-        // Direct Azure OpenAI SDK call — replace with the chat completion
-        // binding for production use (handles session state, managed identity,
-        // and retry automatically).
-        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is required.");
-
-        var deployment = Environment.GetEnvironmentVariable("OPENAI_CHAT_DEPLOYMENT")
-            ?? "gpt-4o";
-
-        var client = new Azure.AI.OpenAI.AzureOpenAIClient(
-            new Uri(endpoint),
-            new Azure.Identity.DefaultAzureCredential());
-
-        var chat = client.GetChatClient(deployment);
-
-        var messages = new List<OpenAI.Chat.ChatMessage>
-{
-    OpenAI.Chat.ChatMessage.CreateSystemMessage($"{systemPrompt}\n\n{context}"),
-    OpenAI.Chat.ChatMessage.CreateUserMessage(userMessage)
-};
-
-        var result = await chat.CompleteChatAsync(messages, cancellationToken: cancellationToken);
-        return result.Value.Content[0].Text;
     }
 }
