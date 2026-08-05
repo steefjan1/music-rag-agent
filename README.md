@@ -99,8 +99,8 @@ curl -X POST "https://<func-name>.azurewebsites.net/api/chat?code=<key>" \
 | Opeth | 932 |
 | Porcupine Tree | 328 |
 | Radiohead | 86 |
-| Mastodon | 598 |
-| Metallica | 1811 |
+| Mastodon | 9186 |
+| Sigur Rós | 5526 |
 
 Find others by browsing `https://www.sputnikmusic.com/bands/a/{id}`.
 
@@ -148,6 +148,75 @@ pip install azure-identity azure-storage-blob --only-binary=cryptography
 ### SputnikMusic scraping
 
 SputnikMusic does not provide an official public API. The scraper uses HTML parsing and may break if the site structure changes. Rate limiting is set to 1.5 seconds between requests — do not remove this.
+
+## Testing
+
+### Ingestion tests
+
+Ingest a new band and verify it appears in query results:
+
+```powershell
+python scripts/ingest.py --artist-id 9186 --artist-name "Mastodon"
+```
+
+Then confirm indexing:
+```json
+{"message": "What are Mastodon's best albums?"}
+```
+
+### Chat agent query tests
+
+**Artist-specific queries:**
+```json
+{"message": "What is the highest rated Radiohead album?"}
+{"message": "List all Metallica albums with their ratings, ordered highest to lowest"}
+{"message": "What albums did Tool release in the 1990s?"}
+{"message": "What is the worst rated Metallica album?"}
+```
+
+**Cross-band comparison:**
+```json
+{"message": "Compare Opeth and Porcupine Tree — which has more critically acclaimed albums?"}
+{"message": "Which band has released the most albums?"}
+{"message": "Which albums across all bands have a rating above 4.5?"}
+```
+
+**Not-in-index path** — agent should say it does not have that information, not hallucinate:
+```json
+{"message": "Tell me about a band called Coldplay"}
+```
+
+**Validation — should return HTTP 400:**
+```json
+{"message": ""}
+```
+
+### KQL queries for monitoring
+
+**Confirm ingestion succeeded:**
+```kusto
+traces
+| where timestamp > ago(10m)
+| where message contains "Indexed"
+| project timestamp, message
+```
+
+**Monitor hybrid search retrieval:**
+```kusto
+traces
+| where timestamp > ago(10m)
+| where message contains "Retrieved"
+| project timestamp, message
+```
+
+**Check for errors:**
+```kusto
+exceptions
+| where timestamp > ago(1h)
+| order by timestamp desc
+| project timestamp, outerMessage, innermostMessage
+| take 10
+```
 
 ## Series
 
